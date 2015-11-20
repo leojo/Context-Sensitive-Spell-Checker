@@ -123,63 +123,6 @@ P_bigram_norm <- function(A, B, verbose=FALSE){
   return(pNorm)
 }
 
-# Function that takes in a string "A B C"
-# and evaluates the probability that "B" makes sense
-# in its' context.
-naiveBayesTrigram <- function(trigram){
-  require(stylo)
-  # Make trigram array:
-  words <- txt.to.words(trigram)
-  if(length(words) != 3){
-    print("Not a valid trigram!")
-    return()
-  }
-  
-  # "A B"
-  frontBigram <- paste(words[1],words[2])
-  # "B C"
-  backBigram <- paste(words[2],words[3])
-  
-  # Calculate the various frequencies
-  # ------------- ATH !!!!!!!!!!!!!! ---------------------------
-  # bigramDict[bigram] tekur 12 missisippi á meðan
-  # length(bigramDict[grepl(bigram, names(bigramDict))])
-  # tekur 2 missisippi...stórfelld áhrif á hraðvirkni forritsins
-  # ------------------------------------------------------------
-  fbFreq <- bigramDict[frontBigram]  # "A B"
-  bbFreq <- bigramDict[backBigram] # "B C"
-  w1Freq <- lemmasDict[words[1]] # "A"
-  w2Freq <- lemmasDict[words[2]] # "B"
-  w3Freq <- lemmasDict[words[3]] # "C"
-  
-  # Initialize in case we get NA values:
-  if(is.na(fbFreq)) fbFreq <- 1
-  if(is.na(bbFreq)) bbFreq <- 1
-  if(is.na(w1Freq)) w1Freq <- 1
-  if(is.na(w2Freq)) w2Freq <- 1
-  if(is.na(w3Freq)) w3Freq <- 1
-  
-  # Calculate the frequencies like so:
-  # A bigram is considered to have 100% chance of being
-  # correct if it appears in our bigram dictionary more 
-  # than a 100 times. Otherwise it's frequency is divided by 100.
-  fbP <- min(fbFreq,100)/100
-  bbP <- min(bbFreq,100)/100
-  w1P <- 1
-  w2P <- min(w2Freq,100)/100
-  w3P <- 1
-  
-  # Naive Bayes allows us to multiply 
-  # the odds as if they were independent:
-  # P(B | A) = P(A B)*P(A)*P(B)
-  fbC <- fbP*w1P*w2P
-  bbC <- bbP*w2P*w3P
-  
-  totalC <- fbC*bbC
-  
-  return(as.numeric(totalC))
-}
-
 # Use Lehvenstein distance to find suggestions
 # for words that are deemed incorrect
 suggestWord <- function(word){
@@ -199,6 +142,18 @@ selectSuggestion <- function(pw, word){
   return(names(sort(pw,decreasing = TRUE))[1])
 }
 
+# Give a best guess for a lemma
+suggestLemma <- function(word){
+  lemmaSuggestions <- wordLemmaDict[wordLemmaDict$Word==word,(2:3)]
+  if(nrow(lemmaSuggestions) == 0) return(word)
+  lemmaGuess <- as.character(lemmaSuggestions[lemmaSuggestions$Freq == max(lemmaSuggestions$Freq),1])
+  return(lemmaGuess)
+}
+
+# Check if word is punctuation
+isPunct <- function(word){
+  return(grepl("[[:punct:]]",word))
+}
 
 # Takes a word/tag/lemma csv, reads the words and makes
 # a decision for each word whether it's correct in it's context
@@ -214,37 +169,43 @@ correctFile <- function(csvFile,destFile){
   ##First we try to correct non-word errors in the file:
   print("Non-word error pass...")
   possibleWord <- c()
+  possibleLemma <- c()
   for(i in 1:length(file_words)){
     word <- tolower(file_words[i])
     freq <- dict[word]
-    correction <- word
+    correction <- file_words[i]
+    correctionLemma <- file_lemmas[i]
     if(is.na(freq)){
       suggestions <- suggestWord(word)
       correction <- selectSuggestion(suggestions, word)
+      correctionLemma <- suggestLemma(correction)
       print(paste(word,"is not a word, replacing with best guess:",correction))
     }
-    possibleWord[i] <- correction
+    possibleLemma[i] <- correctionLemma
+    file_words[i] <- correction
   }
   
   ##Then we do a context based correction
   print("Context error pass...")
-  correctWord <- c(possibleWord[1])
-  for(i in 2:(length(possibleWord)-1)){
+  correctWord <- c(file_words[1])
+  for(i in 2:length(file_words)){
     print("Working...")
-    print(paste("calculating probability for:",paste(file_lemmas[i-1],file_lemmas[i])))
-    probCorrect <- P_bigram_norm(file_lemmas[i-1],file_lemmas[i],verbose = TRUE)
+    print(paste("calculating probability for:",paste(possibleLemma[i-1],possibleLemma[i])))
+    probCorrect <- P_bigram_norm(possibleLemma[i-1],possibleLemma[i],verbose = TRUE)
     print(paste("result:",probCorrect))
-    verdict <- probCorrect>0.1
-#    print(paste("This word is correct:",verdict))
-    correction <- probCorrect #possibleWord[i]
-#     if(!verdict){
-#       suggestions <- suggestWord(possibleWord[i])
-#       correction <- selectSuggestion(suggestions, possibleWord[i])
-#     } 
-#     print(correction)
+    verdict <- probCorrect>=0.5
+    print(paste("This word is correct:",verdict))
+    correction <- file_words[i]
+    correctionLemma <- possibleLemma[i]
+    if(!verdict){
+      suggestions <- suggestWord(possibleWord[i])
+      correction <- selectSuggestion(suggestions, possibleWord[i])
+      correctionLemma <- suggestLemma(correction)
+    } 
+    print(correction)
+    possibleLemma[i] <- correctionLemma
     correctWord <- c(correctWord,correction)
   }
-  correctWord <- c(correctWord,possibleWord[length(possibleWord)])
   check <<- correctWord
   correctedData <- data.frame(Word=file_words,Tag=file_tags,Lemma=file_lemmas_raw,CorrectWord=correctWord)
   write.csv(correctedData, file=destFile)
