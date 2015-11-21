@@ -1,4 +1,4 @@
-learnIcelandic <- function(csvDirPath,verbose=FALSE){
+learnIcelandic <- function(csvDirPath,verbose=TRUE){
   require(tm)
   require(stylo)
   
@@ -24,19 +24,28 @@ learnIcelandic <- function(csvDirPath,verbose=FALSE){
     trim2 <- trim1[trim1!=""]
     lemmas <- c(lemmas,tolower(as.character(trim2)))
     if(verbose)print("done!")
+    
   }
   
   dict <<- table(words) # Get a unique list of words and their frequency, alphabetized
   # Lemma bigrams:
   bigrams <- make.ngrams(lemmas,ngram.size = 2)
-  # ALL bigrams: (all words) -- doesn't work?
-  word.bigrams <- make.ngrams(words,ngram.size = 2)
-  word.bigramDict <<- table(word.bigrams)
-  
   # Lemma bigram dictionary, with frequency
   bigramDict <<- table(bigrams)
   # Lemma dictionary, with frequency
   lemmasDict <<- table(lemmas)
+  
+  
+  if(verbose)print("Creating word-lemma connections...")
+  word.lemma.list <- paste(words,lemmas)
+  word.lemma.freq <- as.data.frame(table(word.lemma.list))
+  wordLemmas <- as.character(word.lemma.freq$word.lemma.list)
+  wordLemmas.split <- strsplit(wordLemmas," ")
+  wordLemmas.length <- length(wordLemmas)
+  word.part <- unlist(wordLemmas.split)[2*(1:wordLemmas.length)-1]
+  lemma.part <- unlist(wordLemmas.split)[2*(1:wordLemmas.length)]
+  wordLemmaDict <<- data.frame(Word=word.part,Lemma=lemma.part,Freq=wordLemmas$Freq)
+  if(verbose)print("done!")
 }
 
 # Function that calculates the probability of a lemma
@@ -83,7 +92,7 @@ suggestWord <- function(word){
 }
 
 # Select the suggestion that is likely to be correct (i.e. is common):
-selectSuggestion <- function(pw, word){
+refineSuggestion <- function(pw, word){
   require(stringdist)
   adjust <- function(dist){
     if(dist==1) return(1)
@@ -92,7 +101,32 @@ selectSuggestion <- function(pw, word){
   for(suggestion in names(pw)){
     pw[suggestion] <- pw[suggestion]*adjust(stringdist(suggestion,word))
   }
-  return(names(sort(pw,decreasing = TRUE))[1])
+  return(sort(pw,decreasing = TRUE)[(1:3)])
+}
+
+# Assuming there is atleast 1 suggestion, will look at top 3 suggestions
+# suggestions should be named indexes with weighted frequencies from the refineSuggestion function
+selectSuggestion <- function(suggestions,A,verbose=FALSE){
+  if(verbose) print(paste("Evlauating",paste(names(suggestions),collapse = ", "),"with respect to",A))
+  bestGuessIndex <- 0
+  bestOdds <- -1
+  for(i in 1:min(3,length(suggestions))){
+    guess <- names(suggestions[i])[1]
+    weight <- as.numeric(suggestions[i])
+    if(!is.na(guess)){
+      if(verbose) print(paste("Evaluating",guess,"with weight",weight))
+      B <- suggestLemma(guess)
+      pAB <- P_bigram(A,B)
+      if(verbose) print(paste("Unweighted odds",pAB))
+      pAB.weighted <- pAB*weight
+      if(verbose) print(paste("Weighted odds",pAB.weighted))
+      if(pAB.weighted > bestOdds){
+        bestOdds <- pAB.weighted
+        bestGuessIndex <- i
+      }
+    }
+  }
+  return(names(suggestions[bestGuessIndex])[1])
 }
 
 # Give a best guess for a lemma
@@ -111,7 +145,7 @@ isPunct <- function(word){
 # Takes a word/tag/lemma csv, reads the words and makes
 # a decision for each word whether it's correct in it's context
 # If a word is deemed incorrect, it put's a suggestion in it's place.
-correctFile <- function(csvFile,destFile,verbose=FALSE,extraVerbose=FALSE){
+correctFile <- function(csvFile,destFile,verbose=FALSE,extraVerbose=FALSE,reportTestAccuracy=FALSE){
   require(stylo)
   rawData <- read.csv(csvFile)
   file_words <- as.character(rawData$Word)
@@ -125,8 +159,8 @@ correctFile <- function(csvFile,destFile,verbose=FALSE,extraVerbose=FALSE){
   possibleWord <- c()
   possibleLemma <- c()
   for(i in 1:file_length){
-    progress <- floor((i*100)/file_length)
-    percentage <- paste(formatC(progress, width=3, flag=" "),"%   ",sep="")
+    progress <- floor((i*10000)/file_length)/100
+    percentage <- paste(formatC(progress, digits = 5, flag=" "),"%   ",sep="")
     word <- tolower(file_words[i])
     if(isPunct(word)){
       possibleLemma[i] <- file_lemmas[i]
@@ -137,7 +171,7 @@ correctFile <- function(csvFile,destFile,verbose=FALSE,extraVerbose=FALSE){
       correctionLemma <- file_lemmas[i]
       if(is.na(freq)){
         suggestions <- suggestWord(word)
-        correction <- selectSuggestion(suggestions, word)
+        correction <- names(refineSuggestion(suggestions, word))[1]
         correctionLemma <- suggestLemma(correction)
         if(verbose)print(paste(percentage,word,"is not a word, replacing with best guess:",correction))
       }
@@ -152,19 +186,22 @@ correctFile <- function(csvFile,destFile,verbose=FALSE,extraVerbose=FALSE){
   correctWord <- c()
   firstWords <<- c()
   for(i in 1:file_length){
-    progress <- floor((i*100)/file_length)
-    percentage <- paste(formatC(progress, width=3, flag=" "),"%   ",sep="")
-    if(startOfSentence){
+    progress <- floor((i*10000)/file_length)/100
+    percentage <- paste(formatC(progress, digits = 5, flag=" "),"%   ",sep="")
+    if(extraVerbose)print(paste(percentage,"Now looking at word '",possibleWord[i],"' with lemma '",possibleLemma[i],"'",sep=""))
+    if(extraVerbose)print(paste(percentage,"This is the first word in the sentance: ",startOfSentence,sep=""))
+    if(extraVerbose)print(paste(percentage,"This word is a punctuation, abbreviation or empty space: ",isPunct(possibleWord[i]),sep=""))
+    if(isPunct(possibleWord[i])){
+      correctWord[i] <- possibleWord[i]
+      startOfSentence <- TRUE
+    }else if(startOfSentence){
       correctWord[i] <- possibleWord[i]
       firstWords <<- c(firstWords,possibleWord[i])
       startOfSentence <- FALSE
       if(verbose)print(paste(percentage,"================ NEW SENTANCE STARTING WITH",possibleWord[i],"============"))
-    }else if(isPunct(possibleWord[i])){
-      correctWord[i] <- possibleWord[i]
-      startOfSentence <- TRUE
     }else{
       if(verbose)print(paste(percentage,"Working..."))
-      if(verbose)print(paste(percentage,"calculating probability for:",paste(possibleLemma[i-1],possibleLemma[i])))
+      if(verbose)print(paste(percentage,"calculating probability for:",paste(possibleLemma[i-1],possibleLemma[i])," (i.e.:",paste(correctWord[i-1],possibleWord[i]),")"))
       probCorrect <- P_bigram(possibleLemma[i-1],possibleLemma[i],extraVerbose)
       if(verbose)print(paste(percentage,"result:",probCorrect))
       verdict <- floor(probCorrect*10000) > 5000
@@ -173,7 +210,8 @@ correctFile <- function(csvFile,destFile,verbose=FALSE,extraVerbose=FALSE){
       correctionLemma <- possibleLemma[i]
       if(!verdict){
         suggestions <- suggestWord(possibleWord[i])
-        correction <- selectSuggestion(suggestions, possibleWord[i])
+        bestGuesses <- refineSuggestion(suggestions, possibleWord[i])
+        correction <- selectSuggestion(bestGuesses, possibleLemma[i-1],extraVerbose)
         correctionLemma <- suggestLemma(correction)
         if(is.na(correction)){
           correction <- possibleWord[i]
@@ -188,6 +226,10 @@ correctFile <- function(csvFile,destFile,verbose=FALSE,extraVerbose=FALSE){
   check <<- correctWord
   correctedData <- data.frame(Word=file_words,Tag=file_tags,Lemma=file_lemmas_raw,CorrectWord=correctWord)
   write.csv(correctedData, file=destFile)
+  if(reportTestAccuracy){
+    accuracy <- floor(testAccuracy(destFile,csvFile)*10000)/100
+    print(paste("Test finished with accuracy",accuracy,"%"))
+  }
 }
 
 testAccuracy <- function(csvCorrectedFile, csvCorrectFile) {
@@ -196,7 +238,7 @@ testAccuracy <- function(csvCorrectedFile, csvCorrectFile) {
   originalData <- read.csv(csvCorrectFile)
   ourCorrections <- ourData$CorrectWord
   orgCorrections <- originalData$CorrectWord
-  
+  print(paste(paste("'",ourCorrections,"'",sep=""),paste("'",orgCorrections,"'",sep=""),tolower(ourCorrections) == tolower(orgCorrections)))
   correctCorrections <- ourCorrections[tolower(ourCorrections) == tolower(orgCorrections)]
   accuracy <- length(correctCorrections)/length(ourCorrections)
   return(accuracy)
