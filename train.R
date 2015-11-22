@@ -204,21 +204,22 @@ correctFile <- function(csvFile,destFile,verbose=FALSE,extraVerbose=FALSE,report
       if(verbose)print(paste(percentage,"calculating probability for:",paste(possibleLemma[i-1],possibleLemma[i])," (i.e.:",paste(correctWord[i-1],possibleWord[i]),")"))
       probCorrect <- P_bigram(possibleLemma[i-1],possibleLemma[i],extraVerbose)
       if(verbose)print(paste(percentage,"result:",probCorrect))
-      verdict <- floor(probCorrect*10000) > 5000
+      verdict <- probCorrect >= 0.5
       if(verbose)print(paste(percentage,"This word is correct:",verdict))
       correction <- possibleWord[i]
       correctionLemma <- possibleLemma[i]
       if(!verdict){
         suggestions <- suggestWord(possibleWord[i])
         bestGuesses <- refineSuggestion(suggestions, possibleWord[i])
-        correction <- selectSuggestion(bestGuesses, possibleLemma[i-1],extraVerbose)
+        correction <- selectSuggestion(bestGuesses, possibleLemma[i-1],extraVerbose) #New approach (95.87% on test3)
+        #correction <- names(bestGuesses)[1] #Old approach (95.87% on test3)
         correctionLemma <- suggestLemma(correction)
         if(is.na(correction)){
           correction <- possibleWord[i]
           correctionLemma <- possibleLemma[i]
         }
       } 
-      if(verbose)print(paste(percentage,correction))
+      if(verbose)print(paste(percentage,"      Correct Word:   ",correction))
       possibleLemma[i] <- correctionLemma
       correctWord[i] <- correction
     }
@@ -238,8 +239,21 @@ testAccuracy <- function(csvCorrectedFile, csvCorrectFile) {
   originalData <- read.csv(csvCorrectFile)
   ourCorrections <- ourData$CorrectWord
   orgCorrections <- originalData$CorrectWord
-  print(paste(paste("'",ourCorrections,"'",sep=""),paste("'",orgCorrections,"'",sep=""),tolower(ourCorrections) == tolower(orgCorrections)))
   correctCorrections <- ourCorrections[tolower(ourCorrections) == tolower(orgCorrections)]
   accuracy <- length(correctCorrections)/length(ourCorrections)
+  return(accuracy)
+}
+
+testChangesAccuracy <- function(fileToCheck, proofReadVersion) {
+  ourData <- read.csv(fileToCheck)
+  originalData <- read.csv(proofReadVersion)
+  ourCorrections <- ourData$CorrectWord
+  orgCorrections <- originalData$CorrectWord
+  orgWords <- originalData$Word
+  wordsChanged <- (tolower(ourCorrections) != tolower(orgWords))
+  ourChanges <- ourCorrections[wordsChanged]
+  comparison <- orgCorrections[wordsChanged]
+  correctCorrections <- ourChanges[tolower(ourChanges) == tolower(comparison)]
+  accuracy <- length(correctCorrections)/length(ourChanges)
   return(accuracy)
 }
