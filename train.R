@@ -145,6 +145,10 @@ isPunct <- function(word){
 # Takes a word/tag/lemma csv, reads the words and makes
 # a decision for each word whether it's correct in it's context
 # If a word is deemed incorrect, it put's a suggestion in it's place.
+# To get an accuracy measure, supply a proofread csv with a correct CorrectWord column
+# and set the reportTestAccuracy flag to TRUE. The function will compare the CorrectWord columns in
+# the output file to the original CorrectWord column and report the accuracy based on that. It will 
+# also check the accuracy confined to words that were replaced by the function.
 correctFile <- function(csvFile,destFile,verbose=FALSE,extraVerbose=FALSE,reportTestAccuracy=FALSE){
   require(stylo)
   rawData <- read.csv(csvFile)
