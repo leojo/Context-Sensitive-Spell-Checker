@@ -1,3 +1,7 @@
+# "Learn icelandic" by analizing a collection of correct texts. The supplied parameter should be a
+# URI to a directory containing one or more csv files with lemmatized texts. (no other files!!).
+# Leaving verbose as TRUE is highly recommended as it will show the progress. However if desired all output
+# can be supressed by setting verbose to FALSE.
 learnIcelandic <- function(csvDirPath,verbose=TRUE){
   require(tm)
   require(stylo)
@@ -234,6 +238,8 @@ correctFile <- function(csvFile,destFile,verbose=FALSE,extraVerbose=FALSE,report
   if(reportTestAccuracy){
     accuracy <- floor(testAccuracy(destFile,csvFile)*10000)/100
     print(paste("Test finished with accuracy",accuracy,"%"))
+    changeAccuracy <- floor(testChangesAccuracy(destFile,csvFile)*10000)/100
+    print(paste("Test finished with replacement accuracy",changeAccuracy,"%"))
   }
 }
 
