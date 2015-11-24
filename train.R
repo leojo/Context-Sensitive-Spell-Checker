@@ -243,6 +243,7 @@ correctFile <- function(csvFile,destFile,verbose=FALSE,extraVerbose=FALSE,report
   }
 }
 
+# Returns the ratio of correct words in the first file, using the second file as a refernce
 testAccuracy <- function(csvCorrectedFile, csvCorrectFile) {
   require(stylo)
   ourData <- read.csv(csvCorrectedFile)
@@ -254,6 +255,7 @@ testAccuracy <- function(csvCorrectedFile, csvCorrectFile) {
   return(accuracy)
 }
 
+# Returns the ratio of correctly replaced words in the first file, using the second file as a refernce
 testChangesAccuracy <- function(fileToCheck, proofReadVersion) {
   ourData <- read.csv(fileToCheck)
   originalData <- read.csv(proofReadVersion)
