@@ -139,7 +139,7 @@ suggestLemma <- function(word){
 
 # Check if word is punctuation
 isPunct <- function(word){
-  return(!grepl("^[[:alpha:]][[:alnum:]]*$",word))
+  return(!grepl("^[[:alnum:]]*[[:alpha:]][[:alnum:]]*$",word))
 }
 
 # Takes a word/tag/lemma csv, reads the words and makes
